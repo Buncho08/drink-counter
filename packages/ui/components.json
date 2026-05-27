@@ -1,0 +1,10 @@
+{
+  "style": "base-maia",
+  "tailwind": {
+    "baseColor": "neutral"
+  },
+  "iconLibrary": "remixicon",
+  "rtl": false,
+  "menuColor": "default",
+  "menuAccent": "bold"
+}

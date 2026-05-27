@@ -1,0 +1,218 @@
+import { json } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { requireAuth } from "~/lib/supabase.server";
+
+export { default } from "./Counter";
+
+/**
+ * ユーザーが owner または editor のイベント一覧と、
+ * 選択中イベント（クエリパラメータ ?event=<eventId>、未指定時は先頭）の
+ * カウンターデータを返す。
+ */
+export async function loader({ request }: LoaderFunctionArgs) {
+    const responseHeaders = new Headers();
+    const { supabase, user } = await requireAuth(request, responseHeaders);
+
+    const url = new URL(request.url);
+    const selectedEventId = url.searchParams.get("event");
+
+    // owner_id で直接取得（トリガー未発火時のフォールバック）
+    const { data: ownedEventsData } = await supabase
+        .from("events")
+        .select("id, name, slug, start_date, end_date")
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: false });
+
+    // editor 権限があるイベントを取得
+    const { data: editorPerms } = await supabase
+        .from("event_permissions")
+        .select("event:events(id, name, slug, start_date, end_date)")
+        .eq("user_id", user.id)
+        .eq("role", "editor");
+
+    const ownedEvents = (ownedEventsData ?? []).map((e) => ({ ...e, role: "owner" as const }));
+    const ownedIds = new Set(ownedEvents.map((e) => e.id));
+    const editorEvents = (editorPerms ?? [])
+        .flatMap((p) =>
+            p.event ? [p.event as { id: string; name: string; slug: string; start_date: string; end_date: string }] : []
+        )
+        .filter((e) => !ownedIds.has(e.id))
+        .map((e) => ({ ...e, role: "editor" as const }));
+
+    const events = [...ownedEvents, ...editorEvents] as {
+        id: string;
+        name: string;
+        slug: string;
+        start_date: string;
+        end_date: string;
+        role: string;
+    }[];
+
+    const selectedEvent = selectedEventId
+        ? (events.find((e) => e.id === selectedEventId) ?? events[0])
+        : events[0];
+
+    let counterData: {
+        id: string;
+        count: number;
+        background_image_url: string | null;
+        display_mode: string;
+        display_text: string;
+    } | null = null;
+
+    if (selectedEvent) {
+        const { data } = await supabase
+            .from("counter_data")
+            .select("id, count, background_image_url, display_mode, display_text")
+            .eq("event_id", selectedEvent.id)
+            .single();
+        counterData = data;
+    }
+
+    return json(
+        { user, events, selectedEvent: selectedEvent ?? null, counterData },
+        { headers: responseHeaders }
+    );
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+    const responseHeaders = new Headers();
+    const { supabase } = await requireAuth(request, responseHeaders);
+
+    const formData = await request.formData();
+    const intent = String(formData.get("intent"));
+    const counterDataId = String(formData.get("counterDataId"));
+
+    // カウントを 1 増加（アトミックな SQL 式を使用し、RLS 失敗を検知）
+    if (intent === "increment") {
+        const { data, error } = await supabase
+            .rpc("increment_counter", { target_id: counterDataId });
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        if (data === null) {
+            return json(
+                { error: "カウンターの更新に失敗しました（権限がないか、IDが不正です）" },
+                { status: 403, headers: responseHeaders }
+            );
+        }
+        return json({ count: data }, { headers: responseHeaders });
+    }
+
+    // カウントを 1 減少（0 未満にならない、アトミック）
+    if (intent === "decrement") {
+        const { data, error } = await supabase
+            .rpc("decrement_counter", { target_id: counterDataId });
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        if (data === null) {
+            return json(
+                { error: "カウンターの更新に失敗しました（権限がないか、IDが不正です）" },
+                { status: 403, headers: responseHeaders }
+            );
+        }
+        return json({ count: data }, { headers: responseHeaders });
+    }
+
+    // カウントを直接指定して更新
+    if (intent === "set") {
+        const count = Number(formData.get("count"));
+        if (!Number.isInteger(count) || count < 0) {
+            return json(
+                { error: "無効なカウント値です（0以上の整数）" },
+                { status: 400, headers: responseHeaders }
+            );
+        }
+        const { data, error } = await supabase
+            .from("counter_data")
+            .update({ count })
+            .eq("id", counterDataId)
+            .select("count")
+            .single();
+        if (error || !data) {
+            return json(
+                { error: error?.message ?? "カウンターの更新に失敗しました（権限がないか、IDが不正です）" },
+                { status: error ? 400 : 403, headers: responseHeaders }
+            );
+        }
+        return json({ count: data.count }, { headers: responseHeaders });
+    }
+
+    // 背景画像をアップロードして URL を counter_data に保存
+    // Supabase Storage バケット名: "backgrounds"（要事前作成）
+    if (intent === "uploadBackground") {
+        const file = formData.get("file") as File;
+        const eventId = String(formData.get("eventId"));
+        const fileExt = file.name.split(".").pop();
+        const filePath = `${eventId}/background.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from("backgrounds")
+            .upload(filePath, file, { upsert: true });
+        if (uploadError) {
+            return json(
+                { error: uploadError.message },
+                { status: 400, headers: responseHeaders }
+            );
+        }
+
+        const {
+            data: { publicUrl },
+        } = supabase.storage.from("backgrounds").getPublicUrl(filePath);
+
+        // dev環境ではgetPublicUrl()がDockerネットワーク内部URL（supabase_kong_...:8000）を返す。
+        // ブラウザはViteプロキシ経由でのみStorageにアクセスできるため、
+        // オリジン部分をリクエストのオリジン（localhost:5173等）に置き換える。
+        const storagePath = new URL(publicUrl).pathname;
+        const requestOrigin = new URL(request.url).origin;
+        const browserUrl = requestOrigin + storagePath;
+
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ background_image_url: browserUrl })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ backgroundUrl: browserUrl }, { headers: responseHeaders });
+    }
+
+    // モニターのフリーテキストを更新
+    if (intent === "setDisplayText") {
+        const displayText = String(formData.get("displayText"));
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text: displayText })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayText }, { headers: responseHeaders });
+    }
+
+    // モニターの表示モードを更新
+    if (intent === "setDisplayMode") {
+        const displayMode = String(formData.get("displayMode"));
+        const validModes = ["count", "image1", "image2", "image3", "text"];
+        if (!validModes.includes(displayMode)) {
+            return json(
+                { error: "無効な表示モードです" },
+                { status: 400, headers: responseHeaders }
+            );
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_mode: displayMode })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayMode }, { headers: responseHeaders });
+    }
+
+    return json(
+        { error: "不明なリクエストです" },
+        { status: 400, headers: responseHeaders }
+    );
+}

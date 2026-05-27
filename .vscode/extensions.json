@@ -1,0 +1,36 @@
+{
+  "recommendations": [
+    // TypeScript & JavaScript
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    
+    // React & Remix
+    "dsznajder.es7-react-js-snippets",
+    "styled-components.vscode-styled-components",
+    
+    // Tailwind CSS
+    "bradlc.vscode-tailwindcss",
+    
+    // Supabase
+    "supabase.vscode-supabase",
+    
+    // Database
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg",
+    
+    // Testing
+    "ms-playwright.playwright",
+    
+    // Git & GitHub
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    
+    // Utilities
+    "christian-kohler.path-intellisense",
+    "usernamehw.errorlens",
+    "gruntfuggly.todo-tree",
+    "wayou.vscode-todo-highlight",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}
