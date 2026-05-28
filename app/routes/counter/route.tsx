@@ -4,6 +4,36 @@ import { requireAuth } from "~/lib/supabase.server";
 
 export { default } from "./Counter";
 
+export function shouldRevalidate({
+    formMethod,
+    formData,
+    defaultShouldRevalidate,
+}: {
+    formMethod?: string;
+    formData?: FormData;
+    defaultShouldRevalidate: boolean;
+}) {
+    if (formMethod?.toUpperCase() !== "POST") {
+        return defaultShouldRevalidate;
+    }
+
+    const intent = String(formData?.get("intent") ?? "");
+    const skipIntents = new Set([
+        "increment",
+        "decrement",
+        "set",
+        "uploadBackground",
+        "setDisplayText",
+        "setDisplayMode",
+    ]);
+
+    if (skipIntents.has(intent)) {
+        return false;
+    }
+
+    return defaultShouldRevalidate;
+}
+
 /**
  * ユーザーが owner または editor のイベント一覧と、
  * 選択中イベント（クエリパラメータ ?event=<eventId>、未指定時は先頭）の

@@ -106,9 +106,6 @@ export default function Counter() {
     }
 
     const isCounting = fetcherCount.state !== "idle";
-    const countError = fetcherCount.state === "idle"
-        ? (fetcherCount.data as { error?: string } | undefined)?.error
-        : undefined;
     const isUploadingBg = fetcherBg.state !== "idle";
     const bgUploadError = fetcherBg.state === "idle" && (fetcherBg.data as { error?: string } | undefined)?.error;
 
@@ -217,12 +214,7 @@ export default function Counter() {
                         </button>
                     </div>
 
-                    {(isCounting || queuedDelta !== 0) && (
-                        <p className="text-xs text-gray-400">同期中...{queuedDelta !== 0 ? `（待ち ${Math.abs(queuedDelta)}）` : ""}</p>
-                    )}
-                    {countError && (
-                        <p className="text-xs text-red-500 text-center">{countError}</p>
-                    )}
+
 
                     {/* 数値直接入力 */}
                     <div className="flex items-center gap-2">
