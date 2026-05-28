@@ -98,12 +98,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         background_image_url: string | null;
         display_mode: string;
         display_text: string;
+        display_text_size: number;
+        display_text_color: string;
     } | null = null;
 
     if (selectedEvent) {
         const { data } = await supabase
             .from("counter_data")
-            .select("id, count, background_image_url, display_mode, display_text")
+            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color")
             .eq("event_id", selectedEvent.id)
             .single();
         counterData = data;
@@ -278,6 +280,38 @@ export async function action({ request }: ActionFunctionArgs) {
             return json({ error: error.message }, { status: 400, headers: responseHeaders });
         }
         return json({ displayMode }, { headers: responseHeaders });
+    }
+
+    // テキストの文字サイズを更新
+    if (intent === "setDisplayTextSize") {
+        const size = Number(formData.get("displayTextSize"));
+        if (!Number.isInteger(size) || size < 10 || size > 400) {
+            return json({ error: "無効なサイズ値です" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_size: size })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextSize: size }, { headers: responseHeaders });
+    }
+
+    // テキストの文字色を更新
+    if (intent === "setDisplayTextColor") {
+        const color = String(formData.get("displayTextColor"));
+        if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+            return json({ error: "無効なカラーコードです" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_color: color })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextColor: color }, { headers: responseHeaders });
     }
 
     return json(
