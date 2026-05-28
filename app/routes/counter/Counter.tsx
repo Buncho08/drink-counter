@@ -1,5 +1,5 @@
 import { Form, useLoaderData, useFetcher, Link } from "@remix-run/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase.client";
 import type { loader } from "./route";
 
@@ -21,8 +21,14 @@ export default function Counter() {
     // 未完了操作数: Realtime/loader更新をブロックするために使用
     const pendingOpsRef = useRef(0);
 
-    // Supabaseブラウザクライアント（一度だけ生成）
-    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+    // Supabaseブラウザクライアント（SSR時は生成しない遅延初期化）
+    const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null);
+    const getSupabase = () => {
+        if (!supabaseRef.current) {
+            supabaseRef.current = createSupabaseBrowserClient();
+        }
+        return supabaseRef.current;
+    };
 
     // loaderの再バリデーション時、保留操作がなければ同期
     useEffect(() => {
@@ -42,6 +48,7 @@ export default function Counter() {
         if (!counterData?.id) return;
 
         // サンプルと同様: subscribeの前にaccess_tokenをrealtimeへセット
+        const supabase = getSupabase();
         let cancelled = false;
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (cancelled) return;
@@ -75,7 +82,7 @@ export default function Counter() {
             cancelled = true;
             supabase.removeChannel(channel);
         };
-    }, [counterData?.id, supabase]);
+    }, [counterData?.id]);
 
     if (events.length === 0) {
         return (
@@ -119,6 +126,7 @@ export default function Counter() {
         setDisplayCount((prev) => Math.max(prev + delta, 0));
         pendingOpsRef.current++;
 
+        const supabase = getSupabase();
         const { error } = await supabase.rpc("apply_counter_delta", {
             target_id: counterData.id,
             target_delta: delta,
