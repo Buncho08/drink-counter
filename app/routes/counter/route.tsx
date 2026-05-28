@@ -4,6 +4,36 @@ import { requireAuth } from "~/lib/supabase.server";
 
 export { default } from "./Counter";
 
+export function shouldRevalidate({
+    formMethod,
+    formData,
+    defaultShouldRevalidate,
+}: {
+    formMethod?: string;
+    formData?: FormData;
+    defaultShouldRevalidate: boolean;
+}) {
+    if (formMethod?.toUpperCase() !== "POST") {
+        return defaultShouldRevalidate;
+    }
+
+    const intent = String(formData?.get("intent") ?? "");
+    const skipIntents = new Set([
+        "delta",
+        "increment",
+        "decrement",
+        "set",
+        "uploadBackground",
+        "setDisplayText",
+    ]);
+
+    if (skipIntents.has(intent)) {
+        return false;
+    }
+
+    return defaultShouldRevalidate;
+}
+
 /**
  * ユーザーが owner または editor のイベント一覧と、
  * 選択中イベント（クエリパラメータ ?event=<eventId>、未指定時は先頭）の
@@ -68,12 +98,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
         background_image_url: string | null;
         display_mode: string;
         display_text: string;
+        display_text_size: number;
+        display_text_color: string;
+        display_text_stroke_enabled: boolean;
+        display_text_stroke_color: string;
     } | null = null;
 
     if (selectedEvent) {
         const { data } = await supabase
             .from("counter_data")
-            .select("id, count, background_image_url, display_mode, display_text")
+            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color, display_text_stroke_enabled, display_text_stroke_color")
             .eq("event_id", selectedEvent.id)
             .single();
         counterData = data;
@@ -92,6 +126,31 @@ export async function action({ request }: ActionFunctionArgs) {
     const formData = await request.formData();
     const intent = String(formData.get("intent"));
     const counterDataId = String(formData.get("counterDataId"));
+
+    // カウント差分をまとめて適用（連打時のリクエスト数削減用）
+    if (intent === "delta") {
+        const delta = Number(formData.get("delta"));
+        if (!Number.isInteger(delta) || delta === 0) {
+            return json(
+                { error: "無効な差分値です（0以外の整数）" },
+                { status: 400, headers: responseHeaders }
+            );
+        }
+        const { data, error } = await supabase.rpc("apply_counter_delta", {
+            target_id: counterDataId,
+            target_delta: delta,
+        });
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        if (data === null) {
+            return json(
+                { error: "カウンターの更新に失敗しました（権限がないか、IDが不正です）" },
+                { status: 403, headers: responseHeaders }
+            );
+        }
+        return json({ count: data }, { headers: responseHeaders });
+    }
 
     // カウントを 1 増加（アトミックな SQL 式を使用し、RLS 失敗を検知）
     if (intent === "increment") {
@@ -223,6 +282,67 @@ export async function action({ request }: ActionFunctionArgs) {
             return json({ error: error.message }, { status: 400, headers: responseHeaders });
         }
         return json({ displayMode }, { headers: responseHeaders });
+    }
+
+    // テキストの文字サイズを更新
+    if (intent === "setDisplayTextSize") {
+        const size = Number(formData.get("displayTextSize"));
+        if (!Number.isInteger(size) || size < 10 || size > 400) {
+            return json({ error: "無効なサイズ値です" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_size: size })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextSize: size }, { headers: responseHeaders });
+    }
+
+    // テキストの文字色を更新
+    if (intent === "setDisplayTextColor") {
+        const color = String(formData.get("displayTextColor"));
+        if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+            return json({ error: "無効なカラーコードです" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_color: color })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextColor: color }, { headers: responseHeaders });
+    }
+
+    // テキストのフチ表示ON/OFFを更新
+    if (intent === "setDisplayTextStrokeEnabled") {
+        const enabled = formData.get("displayTextStrokeEnabled") === "true";
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_stroke_enabled: enabled })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextStrokeEnabled: enabled }, { headers: responseHeaders });
+    }
+
+    // テキストのフチ色を更新
+    if (intent === "setDisplayTextStrokeColor") {
+        const color = String(formData.get("displayTextStrokeColor"));
+        if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+            return json({ error: "無効なカラーコードです" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_stroke_color: color })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextStrokeColor: color }, { headers: responseHeaders });
     }
 
     return json(

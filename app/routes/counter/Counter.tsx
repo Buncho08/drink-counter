@@ -1,41 +1,78 @@
 import { Form, useLoaderData, useFetcher, Link } from "@remix-run/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase.client";
 import type { loader } from "./route";
 
 export default function Counter() {
     const { events, selectedEvent, counterData } = useLoaderData<typeof loader>();
-    const fetcherCount = useFetcher();
     const fetcherSet = useFetcher();
     const fetcherBg = useFetcher();
     const fetcherMode = useFetcher();
     const fetcherText = useFetcher();
+    const fetcherTextSize = useFetcher();
+    const fetcherTextColor = useFetcher();
+    const fetcherTextStroke = useFetcher();
+    const fetcherTextStrokeColor = useFetcher();
 
-    const [realtimeCount, setRealtimeCount] = useState(counterData?.count ?? 0);
+    const [displayCount, setDisplayCount] = useState(counterData?.count ?? 0);
     const [countInput, setCountInput] = useState(counterData?.count ?? 0);
     const [showSetConfirm, setShowSetConfirm] = useState(false);
     const [pendingSetCount, setPendingSetCount] = useState(0);
     const [textInput, setTextInput] = useState(counterData?.display_text ?? "");
     const [showTextConfirm, setShowTextConfirm] = useState(false);
     const [pendingText, setPendingText] = useState("");
+    const [textSizeInput, setTextSizeInput] = useState(counterData?.display_text_size ?? 120);
+    const [textColorInput, setTextColorInput] = useState(counterData?.display_text_color ?? "#EAB308");
+    const [textStrokeEnabled, setTextStrokeEnabled] = useState(counterData?.display_text_stroke_enabled ?? true);
+    const [textStrokeColorInput, setTextStrokeColorInput] = useState(counterData?.display_text_stroke_color ?? "#000000");
 
-    // loaderの再バリデーションで最新値に同期（カウント変化時のみ）
+    // 未完了操作数: Realtime/loader更新をブロックするために使用
+    const pendingOpsRef = useRef(0);
+
+    // Supabaseブラウザクライアント（SSR時は生成しない遅延初期化）
+    const supabaseRef = useRef<ReturnType<typeof createSupabaseBrowserClient> | null>(null);
+    const getSupabase = () => {
+        if (!supabaseRef.current) {
+            supabaseRef.current = createSupabaseBrowserClient();
+        }
+        return supabaseRef.current;
+    };
+
+    // loaderの再バリデーション時、保留操作がなければ同期
     useEffect(() => {
-        setRealtimeCount(counterData?.count ?? 0);
-        setCountInput(counterData?.count ?? 0);
+        if (pendingOpsRef.current === 0) {
+            const latest = counterData?.count ?? 0;
+            setDisplayCount(latest);
+            setCountInput(latest);
+        }
     }, [counterData?.count]);
 
     useEffect(() => {
         setTextInput(counterData?.display_text ?? "");
     }, [counterData?.display_text]);
 
+    useEffect(() => {
+        setTextSizeInput(counterData?.display_text_size ?? 120);
+    }, [counterData?.display_text_size]);
+
+    useEffect(() => {
+        setTextColorInput(counterData?.display_text_color ?? "#EAB308");
+    }, [counterData?.display_text_color]);
+
+    useEffect(() => {
+        setTextStrokeEnabled(counterData?.display_text_stroke_enabled ?? true);
+    }, [counterData?.display_text_stroke_enabled]);
+
+    useEffect(() => {
+        setTextStrokeColorInput(counterData?.display_text_stroke_color ?? "#000000");
+    }, [counterData?.display_text_stroke_color]);
+
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
         if (!counterData?.id) return;
 
-        const supabase = createSupabaseBrowserClient();
-
         // サンプルと同様: subscribeの前にaccess_tokenをrealtimeへセット
+        const supabase = getSupabase();
         let cancelled = false;
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (cancelled) return;
@@ -56,8 +93,11 @@ export default function Counter() {
                 },
                 (payload) => {
                     const updated = payload.new as { count: number };
-                    setRealtimeCount(updated.count);
-                    setCountInput(updated.count);
+                    // 保留操作がなければ確定値で上書き（操作中は楽観的表示を維持）
+                    if (pendingOpsRef.current === 0) {
+                        setDisplayCount(updated.count);
+                        setCountInput(updated.count);
+                    }
                 }
             )
             .subscribe();
@@ -86,8 +126,6 @@ export default function Counter() {
         );
     }
 
-    const isDecrementing = fetcherCount.state !== "idle" && fetcherCount.formData?.get("intent") === "decrement";
-    const isIncrementing = fetcherCount.state !== "idle" && fetcherCount.formData?.get("intent") === "increment";
     const isUploadingBg = fetcherBg.state !== "idle";
     const bgUploadError = fetcherBg.state === "idle" && (fetcherBg.data as { error?: string } | undefined)?.error;
 
@@ -101,6 +139,38 @@ export default function Counter() {
     // optimistic update: fetcherModeで送信中の値があればそちらを優先
     const optimisticMode = fetcherMode.formData?.get("displayMode") as string | null;
     const currentDisplayMode = optimisticMode ?? counterData?.display_mode ?? "count";
+
+    const handleCountClick = async (intent: "increment" | "decrement") => {
+        if (!counterData?.id) return;
+
+        const delta = intent === "increment" ? 1 : -1;
+        if (delta < 0 && displayCount <= 0) return;
+
+        // 即座にUI更新（楽観的更新）
+        setDisplayCount((prev) => Math.max(prev + delta, 0));
+        pendingOpsRef.current++;
+
+        const supabase = getSupabase();
+        const { error } = await supabase.rpc("apply_counter_delta", {
+            target_id: counterData.id,
+            target_delta: delta,
+        });
+
+        pendingOpsRef.current--;
+
+        if (error) {
+            // エラー時はDBから再取得してロールバック
+            const { data } = await supabase
+                .from("counter_data")
+                .select("count")
+                .eq("id", counterData.id)
+                .single();
+            if (data) {
+                setDisplayCount(data.count);
+                setCountInput(data.count);
+            }
+        }
+    };
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -150,35 +220,29 @@ export default function Counter() {
                         className="font-bold text-gray-900 leading-none select-none"
                         style={{ fontSize: "clamp(5rem, 25vw, 14rem)" }}
                     >
-                        {realtimeCount}
+                        {displayCount}
                     </p>
 
                     {/* ＋ / − ボタン */}
                     <div className="flex items-center gap-8">
-                        <fetcherCount.Form method="post">
-                            <input type="hidden" name="counterDataId" value={counterData.id} />
-                            <input type="hidden" name="intent" value="decrement" />
-                            <button
-                                type="submit"
-                                disabled={isDecrementing}
-                                className="w-20 h-20 rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 disabled:opacity-50 text-4xl font-light text-gray-700 transition-all flex items-center justify-center"
-                            >
-                                −
-                            </button>
-                        </fetcherCount.Form>
+                        <button
+                            type="button"
+                            onClick={() => handleCountClick("decrement")}
+                            className="w-20 h-20 rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 text-4xl font-light text-gray-700 transition-all flex items-center justify-center"
+                        >
+                            −
+                        </button>
 
-                        <fetcherCount.Form method="post">
-                            <input type="hidden" name="counterDataId" value={counterData.id} />
-                            <input type="hidden" name="intent" value="increment" />
-                            <button
-                                type="submit"
-                                disabled={isIncrementing}
-                                className="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 text-4xl font-light text-white transition-all shadow-lg shadow-blue-200 flex items-center justify-center"
-                            >
-                                ＋
-                            </button>
-                        </fetcherCount.Form>
+                        <button
+                            type="button"
+                            onClick={() => handleCountClick("increment")}
+                            className="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-4xl font-light text-white transition-all shadow-lg shadow-blue-200 flex items-center justify-center"
+                        >
+                            ＋
+                        </button>
                     </div>
+
+
 
                     {/* 数値直接入力 */}
                     <div className="flex items-center gap-2">
@@ -249,15 +313,16 @@ export default function Counter() {
 
                     {/* 文字入力（displayMode === "text" のとき表示） */}
                     {currentDisplayMode === "text" && (
-                        <div className="w-full max-w-xs">
-                            <p className="text-xs text-gray-400 text-center mb-2">モニターに表示する文字</p>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="text"
+                        <div className="w-full max-w-xs flex flex-col gap-3">
+                            <p className="text-xs text-gray-400 text-center">モニターに表示する文字</p>
+                            {/* テキスト入力（改行対応） */}
+                            <div className="flex items-start gap-2">
+                                <textarea
                                     value={textInput}
                                     onChange={(e) => setTextInput(e.target.value)}
-                                    placeholder="表示する文字を入力"
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="表示する文字を入力（改行可）"
+                                    rows={3}
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                 />
                                 <button
                                     type="button"
@@ -270,6 +335,84 @@ export default function Counter() {
                                     セット
                                 </button>
                             </div>
+                            {/* 文字サイズ */}
+                            <fetcherTextSize.Form method="post" className="flex items-center gap-2">
+                                <input type="hidden" name="counterDataId" value={counterData.id} />
+                                <input type="hidden" name="intent" value="setDisplayTextSize" />
+                                <span className="text-xs text-gray-500 w-10 shrink-0">サイズ</span>
+                                <input
+                                    type="range"
+                                    name="displayTextSize"
+                                    min={40}
+                                    max={200}
+                                    step={10}
+                                    value={textSizeInput}
+                                    onChange={(e) => setTextSizeInput(Number(e.target.value))}
+                                    onPointerUp={(e) => fetcherTextSize.submit(e.currentTarget.form!)}
+                                    className="flex-1"
+                                />
+                                <span className="text-xs text-gray-500 w-8 text-right shrink-0">{textSizeInput}</span>
+                            </fetcherTextSize.Form>
+                            {/* 文字色 */}
+                            <fetcherTextColor.Form method="post" className="flex items-center gap-2">
+                                <input type="hidden" name="counterDataId" value={counterData.id} />
+                                <input type="hidden" name="intent" value="setDisplayTextColor" />
+                                <span className="text-xs text-gray-500 w-10 shrink-0">色</span>
+                                <input
+                                    type="color"
+                                    name="displayTextColor"
+                                    value={textColorInput}
+                                    onChange={(e) => {
+                                        setTextColorInput(e.target.value);
+                                        fetcherTextColor.submit(e.currentTarget.form!);
+                                    }}
+                                    className="w-9 h-9 rounded cursor-pointer border border-gray-300 bg-white p-0.5"
+                                />
+                                <span className="text-xs text-gray-400">{textColorInput}</span>
+                            </fetcherTextColor.Form>
+                            {/* 文字フチ */}
+                            <fetcherTextStroke.Form method="post" className="flex items-center gap-2">
+                                <input type="hidden" name="counterDataId" value={counterData.id} />
+                                <input type="hidden" name="intent" value="setDisplayTextStrokeEnabled" />
+                                <span className="text-xs text-gray-500 w-10 shrink-0">フチ</span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={textStrokeEnabled}
+                                    onClick={() => {
+                                        const next = !textStrokeEnabled;
+                                        setTextStrokeEnabled(next);
+                                        fetcherTextStroke.submit(
+                                            { counterDataId: counterData.id, intent: "setDisplayTextStrokeEnabled", displayTextStrokeEnabled: String(next) },
+                                            { method: "post" }
+                                        );
+                                    }}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${textStrokeEnabled ? "bg-blue-600" : "bg-gray-300"
+                                        }`}
+                                >
+                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${textStrokeEnabled ? "translate-x-4" : "translate-x-1"
+                                        }`} />
+                                </button>
+                            </fetcherTextStroke.Form>
+                            {/* フチ色（有効時のみ表示） */}
+                            {textStrokeEnabled && (
+                                <fetcherTextStrokeColor.Form method="post" className="flex items-center gap-2">
+                                    <input type="hidden" name="counterDataId" value={counterData.id} />
+                                    <input type="hidden" name="intent" value="setDisplayTextStrokeColor" />
+                                    <span className="text-xs text-gray-500 w-10 shrink-0">フチ色</span>
+                                    <input
+                                        type="color"
+                                        name="displayTextStrokeColor"
+                                        value={textStrokeColorInput}
+                                        onChange={(e) => {
+                                            setTextStrokeColorInput(e.target.value);
+                                            fetcherTextStrokeColor.submit(e.currentTarget.form!);
+                                        }}
+                                        className="w-9 h-9 rounded cursor-pointer border border-gray-300 bg-white p-0.5"
+                                    />
+                                    <span className="text-xs text-gray-400">{textStrokeColorInput}</span>
+                                </fetcherTextStrokeColor.Form>
+                            )}
                         </div>
                     )}
                 </main>

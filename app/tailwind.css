@@ -5,6 +5,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.kaisei-opti-regular {
+  font-family: "Kaisei Opti";
+  font-weight: 400;
+  font-style: normal;
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Noto Sans Variable', sans-serif;

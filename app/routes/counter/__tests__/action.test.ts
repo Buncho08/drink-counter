@@ -88,6 +88,46 @@ describe("counter action", () => {
         });
     });
 
+    describe("delta", () => {
+        it("supabase.rpc('apply_counter_delta') を呼び出す", async () => {
+            mockRpc.mockResolvedValue({ data: 50, error: null });
+
+            const res = await action({
+                request: makeRequest({ intent: "delta", counterDataId: COUNTER_ID, delta: "8" }),
+                params: {},
+                context: {},
+            });
+
+            expect(mockRpc).toHaveBeenCalledWith("apply_counter_delta", {
+                target_id: COUNTER_ID,
+                target_delta: 8,
+            });
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body.count).toBe(50);
+        });
+
+        it("delta が 0 の場合は 400 を返す", async () => {
+            const res = await action({
+                request: makeRequest({ intent: "delta", counterDataId: COUNTER_ID, delta: "0" }),
+                params: {},
+                context: {},
+            });
+
+            expect(res.status).toBe(400);
+        });
+
+        it("delta が非整数の場合は 400 を返す", async () => {
+            const res = await action({
+                request: makeRequest({ intent: "delta", counterDataId: COUNTER_ID, delta: "1.5" }),
+                params: {},
+                context: {},
+            });
+
+            expect(res.status).toBe(400);
+        });
+    });
+
     describe("decrement", () => {
         it("supabase.rpc('decrement_counter') を呼び出す", async () => {
             mockRpc.mockResolvedValue({ data: 41, error: null });

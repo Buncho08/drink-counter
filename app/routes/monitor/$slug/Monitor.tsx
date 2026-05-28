@@ -16,14 +16,31 @@ export default function Monitor() {
     const [uploadedImageUrl, setUploadedImageUrl] = useState(counterData?.background_image_url ?? null);
     const [displayMode, setDisplayMode] = useState(counterData?.display_mode ?? "count");
     const [displayText, setDisplayText] = useState(counterData?.display_text ?? "");
+    const [displayTextSize, setDisplayTextSize] = useState(counterData?.display_text_size ?? 120);
+    const [displayTextColor, setDisplayTextColor] = useState(counterData?.display_text_color ?? "#EAB308");
+    const [displayTextStrokeEnabled, setDisplayTextStrokeEnabled] = useState(counterData?.display_text_stroke_enabled ?? true);
+    const [displayTextStrokeColor, setDisplayTextStrokeColor] = useState(counterData?.display_text_stroke_color ?? "#000000");
 
     // loaderの再バリデーションで最新値に同期
     useEffect(() => {
-        setRealtimeCount(counterData?.count ?? null);
-        setUploadedImageUrl(counterData?.background_image_url ?? null);
-        setDisplayMode(counterData?.display_mode ?? "count");
-        setDisplayText(counterData?.display_text ?? "");
-    }, [counterData?.count, counterData?.background_image_url, counterData?.display_mode, counterData?.display_text]);
+        const nextCount = counterData?.count ?? null;
+        const nextImageUrl = counterData?.background_image_url ?? null;
+        const nextMode = counterData?.display_mode ?? "count";
+        const nextText = counterData?.display_text ?? "";
+        const nextSize = counterData?.display_text_size ?? 120;
+        const nextColor = counterData?.display_text_color ?? "#EAB308";
+        const nextStrokeEnabled = counterData?.display_text_stroke_enabled ?? true;
+        const nextStrokeColor = counterData?.display_text_stroke_color ?? "#000000";
+
+        setRealtimeCount((prev) => (prev === nextCount ? prev : nextCount));
+        setUploadedImageUrl((prev) => (prev === nextImageUrl ? prev : nextImageUrl));
+        setDisplayMode((prev) => (prev === nextMode ? prev : nextMode));
+        setDisplayText((prev) => (prev === nextText ? prev : nextText));
+        setDisplayTextSize((prev) => (prev === nextSize ? prev : nextSize));
+        setDisplayTextColor((prev) => (prev === nextColor ? prev : nextColor));
+        setDisplayTextStrokeEnabled((prev) => (prev === nextStrokeEnabled ? prev : nextStrokeEnabled));
+        setDisplayTextStrokeColor((prev) => (prev === nextStrokeColor ? prev : nextStrokeColor));
+    }, [counterData?.count, counterData?.background_image_url, counterData?.display_mode, counterData?.display_text, counterData?.display_text_size, counterData?.display_text_color, counterData?.display_text_stroke_enabled, counterData?.display_text_stroke_color]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
@@ -56,11 +73,28 @@ export default function Monitor() {
                         background_image_url: string | null;
                         display_mode: string;
                         display_text: string;
+                        display_text_size: number;
+                        display_text_color: string;
+                        display_text_stroke_enabled: boolean;
+                        display_text_stroke_color: string;
                     };
-                    setRealtimeCount(updated.count);
-                    setUploadedImageUrl(updated.background_image_url);
-                    setDisplayMode(updated.display_mode ?? "count");
-                    setDisplayText(updated.display_text ?? "");
+                    const nextCount = updated.count;
+                    const nextImageUrl = updated.background_image_url;
+                    const nextMode = updated.display_mode ?? "count";
+                    const nextText = updated.display_text ?? "";
+                    const nextSize = updated.display_text_size ?? 120;
+                    const nextColor = updated.display_text_color ?? "#EAB308";
+                    const nextStrokeEnabled = updated.display_text_stroke_enabled ?? true;
+                    const nextStrokeColor = updated.display_text_stroke_color ?? "#000000";
+
+                    setRealtimeCount((prev) => (prev === nextCount ? prev : nextCount));
+                    setUploadedImageUrl((prev) => (prev === nextImageUrl ? prev : nextImageUrl));
+                    setDisplayMode((prev) => (prev === nextMode ? prev : nextMode));
+                    setDisplayText((prev) => (prev === nextText ? prev : nextText));
+                    setDisplayTextSize((prev) => (prev === nextSize ? prev : nextSize));
+                    setDisplayTextColor((prev) => (prev === nextColor ? prev : nextColor));
+                    setDisplayTextStrokeEnabled((prev) => (prev === nextStrokeEnabled ? prev : nextStrokeEnabled));
+                    setDisplayTextStrokeColor((prev) => (prev === nextStrokeColor ? prev : nextStrokeColor));
                 }
             )
             .subscribe();
@@ -140,8 +174,15 @@ export default function Monitor() {
                             </video>
                             <div className='absolute w-full top-1/2 -translate-y-1/2 text-center px-4'>
                                 <p
-                                    style={{ WebkitTextStroke: "7px #000", paintOrder: "stroke" }}
-                                    className='text-[120px] font-extrabold text-yellow-500 leading-tight break-words'
+                                    style={{
+                                        ...(displayTextStrokeEnabled
+                                            ? { WebkitTextStroke: `7px ${displayTextStrokeColor}`, paintOrder: "stroke" }
+                                            : {}),
+                                        fontSize: `${displayTextSize}px`,
+                                        color: displayTextColor,
+                                        whiteSpace: "pre-wrap",
+                                    }}
+                                    className='font-extrabold leading-tight break-words kaisei-opti-regular'
                                 >
                                     {displayText}
                                 </p>
