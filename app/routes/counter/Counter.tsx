@@ -1,99 +1,45 @@
 import { Form, useLoaderData, useFetcher, Link } from "@remix-run/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase.client";
 import type { loader } from "./route";
 
 export default function Counter() {
     const { events, selectedEvent, counterData } = useLoaderData<typeof loader>();
-    const fetcherCount = useFetcher();
     const fetcherSet = useFetcher();
     const fetcherBg = useFetcher();
     const fetcherMode = useFetcher();
     const fetcherText = useFetcher();
 
-    const [committedCount, setCommittedCount] = useState(counterData?.count ?? 0);
+    const [displayCount, setDisplayCount] = useState(counterData?.count ?? 0);
     const [countInput, setCountInput] = useState(counterData?.count ?? 0);
     const [showSetConfirm, setShowSetConfirm] = useState(false);
     const [pendingSetCount, setPendingSetCount] = useState(0);
     const [textInput, setTextInput] = useState(counterData?.display_text ?? "");
     const [showTextConfirm, setShowTextConfirm] = useState(false);
     const [pendingText, setPendingText] = useState("");
-    const [pendingDelta, setPendingDelta] = useState(0);
-    const [inFlightDelta, setInFlightDelta] = useState(0);
-    const prevFetcherState = useRef(fetcherCount.state);
-    const pendingDeltaRef = useRef(pendingDelta);
-    const inFlightDeltaRef = useRef(inFlightDelta);
 
-    const isCounting = fetcherCount.state !== "idle";
-    const displayCount = Math.max(committedCount + pendingDelta, 0);
+    // 未完了操作数: Realtime/loader更新をブロックするために使用
+    const pendingOpsRef = useRef(0);
 
+    // Supabaseブラウザクライアント（一度だけ生成）
+    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+    // loaderの再バリデーション時、保留操作がなければ同期
     useEffect(() => {
-        pendingDeltaRef.current = pendingDelta;
-    }, [pendingDelta]);
-
-    useEffect(() => {
-        inFlightDeltaRef.current = inFlightDelta;
-    }, [inFlightDelta]);
-
-    // loaderの再バリデーションで最新値に同期（カウント変化時のみ）
-    useEffect(() => {
-        const latest = counterData?.count ?? 0;
-        setCommittedCount(latest);
+        if (pendingOpsRef.current === 0) {
+            const latest = counterData?.count ?? 0;
+            setDisplayCount(latest);
+            setCountInput(latest);
+        }
     }, [counterData?.count]);
-
-    useEffect(() => {
-        setCountInput(displayCount);
-    }, [displayCount]);
 
     useEffect(() => {
         setTextInput(counterData?.display_text ?? "");
     }, [counterData?.display_text]);
 
-    const submitDelta = (delta: number) => {
-        if (!counterData?.id || delta === 0) return;
-        setInFlightDelta(delta);
-        fetcherCount.submit(
-            { counterDataId: counterData.id, intent: "delta", delta: String(delta) },
-            { method: "post" }
-        );
-    };
-
-    // 送信完了時に inFlight を確定値へ反映し、未送信差分があれば続けてまとめ送信する。
-    useEffect(() => {
-        const becameIdle = prevFetcherState.current !== "idle" && fetcherCount.state === "idle";
-        prevFetcherState.current = fetcherCount.state;
-
-        if (!becameIdle) {
-            return;
-        }
-
-        const sentDelta = inFlightDeltaRef.current;
-        const hasCount =
-            fetcherCount.data &&
-            typeof fetcherCount.data === "object" &&
-            "count" in fetcherCount.data &&
-            typeof (fetcherCount.data as { count: unknown }).count === "number";
-
-        if (sentDelta !== 0) {
-            if (hasCount) {
-                setCommittedCount((fetcherCount.data as { count: number }).count);
-            }
-            setPendingDelta((prev) => prev - sentDelta);
-            setInFlightDelta(0);
-            inFlightDeltaRef.current = 0;
-        }
-
-        const remaining = pendingDeltaRef.current - sentDelta;
-        if (remaining !== 0 && counterData?.id) {
-            submitDelta(remaining);
-        }
-    }, [fetcherCount.state, fetcherCount.data, counterData?.id]);
-
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
         if (!counterData?.id) return;
-
-        const supabase = createSupabaseBrowserClient();
 
         // サンプルと同様: subscribeの前にaccess_tokenをrealtimeへセット
         let cancelled = false;
@@ -116,7 +62,11 @@ export default function Counter() {
                 },
                 (payload) => {
                     const updated = payload.new as { count: number };
-                    setCommittedCount(updated.count);
+                    // 保留操作がなければ確定値で上書き（操作中は楽観的表示を維持）
+                    if (pendingOpsRef.current === 0) {
+                        setDisplayCount(updated.count);
+                        setCountInput(updated.count);
+                    }
                 }
             )
             .subscribe();
@@ -125,7 +75,7 @@ export default function Counter() {
             cancelled = true;
             supabase.removeChannel(channel);
         };
-    }, [counterData?.id]);
+    }, [counterData?.id, supabase]);
 
     if (events.length === 0) {
         return (
@@ -159,21 +109,35 @@ export default function Counter() {
     const optimisticMode = fetcherMode.formData?.get("displayMode") as string | null;
     const currentDisplayMode = optimisticMode ?? counterData?.display_mode ?? "count";
 
-    const handleCountClick = (intent: "increment" | "decrement") => {
+    const handleCountClick = async (intent: "increment" | "decrement") => {
         if (!counterData?.id) return;
 
         const delta = intent === "increment" ? 1 : -1;
         if (delta < 0 && displayCount <= 0) return;
 
-        const nextPending = Math.max(pendingDeltaRef.current + delta, -committedCount);
-        pendingDeltaRef.current = nextPending;
-        setPendingDelta(nextPending);
+        // 即座にUI更新（楽観的更新）
+        setDisplayCount((prev) => Math.max(prev + delta, 0));
+        pendingOpsRef.current++;
 
-        if (isCounting || inFlightDeltaRef.current !== 0) {
-            return;
+        const { error } = await supabase.rpc("apply_counter_delta", {
+            target_id: counterData.id,
+            target_delta: delta,
+        });
+
+        pendingOpsRef.current--;
+
+        if (error) {
+            // エラー時はDBから再取得してロールバック
+            const { data } = await supabase
+                .from("counter_data")
+                .select("count")
+                .eq("id", counterData.id)
+                .single();
+            if (data) {
+                setDisplayCount(data.count);
+                setCountInput(data.count);
+            }
         }
-
-        submitDelta(nextPending);
     };
 
     return (
