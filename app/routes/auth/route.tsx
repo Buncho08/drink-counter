@@ -36,11 +36,13 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "signup") {
         const username = String(formData.get("username"));
         const fullName = String(formData.get("fullName"));
+        const emailRedirectTo = new URL("/auth", new URL(request.url).origin).toString();
         // handle_new_user トリガーがプロフィールを自動作成する
         const { error } = await supabase.auth.signUp({
             email,
             password,
             options: {
+                emailRedirectTo,
                 data: { username, full_name: fullName },
             },
         });
