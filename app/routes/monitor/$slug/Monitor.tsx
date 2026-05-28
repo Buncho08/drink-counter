@@ -19,10 +19,15 @@ export default function Monitor() {
 
     // loaderの再バリデーションで最新値に同期
     useEffect(() => {
-        setRealtimeCount(counterData?.count ?? null);
-        setUploadedImageUrl(counterData?.background_image_url ?? null);
-        setDisplayMode(counterData?.display_mode ?? "count");
-        setDisplayText(counterData?.display_text ?? "");
+        const nextCount = counterData?.count ?? null;
+        const nextImageUrl = counterData?.background_image_url ?? null;
+        const nextMode = counterData?.display_mode ?? "count";
+        const nextText = counterData?.display_text ?? "";
+
+        setRealtimeCount((prev) => (prev === nextCount ? prev : nextCount));
+        setUploadedImageUrl((prev) => (prev === nextImageUrl ? prev : nextImageUrl));
+        setDisplayMode((prev) => (prev === nextMode ? prev : nextMode));
+        setDisplayText((prev) => (prev === nextText ? prev : nextText));
     }, [counterData?.count, counterData?.background_image_url, counterData?.display_mode, counterData?.display_text]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
@@ -57,10 +62,15 @@ export default function Monitor() {
                         display_mode: string;
                         display_text: string;
                     };
-                    setRealtimeCount(updated.count);
-                    setUploadedImageUrl(updated.background_image_url);
-                    setDisplayMode(updated.display_mode ?? "count");
-                    setDisplayText(updated.display_text ?? "");
+                    const nextCount = updated.count;
+                    const nextImageUrl = updated.background_image_url;
+                    const nextMode = updated.display_mode ?? "count";
+                    const nextText = updated.display_text ?? "";
+
+                    setRealtimeCount((prev) => (prev === nextCount ? prev : nextCount));
+                    setUploadedImageUrl((prev) => (prev === nextImageUrl ? prev : nextImageUrl));
+                    setDisplayMode((prev) => (prev === nextMode ? prev : nextMode));
+                    setDisplayText((prev) => (prev === nextText ? prev : nextText));
                 }
             )
             .subscribe();
