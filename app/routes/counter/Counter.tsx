@@ -19,12 +19,29 @@ export default function Counter() {
     const [showTextConfirm, setShowTextConfirm] = useState(false);
     const [pendingText, setPendingText] = useState("");
     const [queuedDelta, setQueuedDelta] = useState(0);
+    const [serverCount, setServerCount] = useState(counterData?.count ?? 0);
     const prevFetcherState = useRef(fetcherCount.state);
+    const queuedDeltaRef = useRef(queuedDelta);
+    const isCountingRef = useRef(false);
+
+    const isCounting = fetcherCount.state !== "idle";
+
+    useEffect(() => {
+        queuedDeltaRef.current = queuedDelta;
+    }, [queuedDelta]);
+
+    useEffect(() => {
+        isCountingRef.current = isCounting;
+    }, [isCounting]);
 
     // loaderの再バリデーションで最新値に同期（カウント変化時のみ）
     useEffect(() => {
-        setRealtimeCount(counterData?.count ?? 0);
-        setCountInput(counterData?.count ?? 0);
+        const latest = counterData?.count ?? 0;
+        setServerCount(latest);
+        if (!isCountingRef.current && queuedDeltaRef.current === 0) {
+            setRealtimeCount(latest);
+            setCountInput(latest);
+        }
     }, [counterData?.count]);
 
     useEffect(() => {
@@ -47,6 +64,14 @@ export default function Counter() {
             { method: "post" }
         );
     }, [fetcherCount, fetcherCount.state, queuedDelta, counterData?.id]);
+
+    // 送信キューが空になったタイミングで、最終確定値に揃える。
+    useEffect(() => {
+        if (!isCounting && queuedDelta === 0) {
+            setRealtimeCount(serverCount);
+            setCountInput(serverCount);
+        }
+    }, [isCounting, queuedDelta, serverCount]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
@@ -75,8 +100,11 @@ export default function Counter() {
                 },
                 (payload) => {
                     const updated = payload.new as { count: number };
-                    setRealtimeCount(updated.count);
-                    setCountInput(updated.count);
+                    setServerCount(updated.count);
+                    if (!isCountingRef.current && queuedDeltaRef.current === 0) {
+                        setRealtimeCount(updated.count);
+                        setCountInput(updated.count);
+                    }
                 }
             )
             .subscribe();
@@ -105,7 +133,6 @@ export default function Counter() {
         );
     }
 
-    const isCounting = fetcherCount.state !== "idle";
     const isUploadingBg = fetcherBg.state !== "idle";
     const bgUploadError = fetcherBg.state === "idle" && (fetcherBg.data as { error?: string } | undefined)?.error;
 
