@@ -25,7 +25,6 @@ export function shouldRevalidate({
         "set",
         "uploadBackground",
         "setDisplayText",
-        "setDisplayMode",
     ]);
 
     if (skipIntents.has(intent)) {
