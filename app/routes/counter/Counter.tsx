@@ -11,67 +11,83 @@ export default function Counter() {
     const fetcherMode = useFetcher();
     const fetcherText = useFetcher();
 
-    const [realtimeCount, setRealtimeCount] = useState(counterData?.count ?? 0);
+    const [committedCount, setCommittedCount] = useState(counterData?.count ?? 0);
     const [countInput, setCountInput] = useState(counterData?.count ?? 0);
     const [showSetConfirm, setShowSetConfirm] = useState(false);
     const [pendingSetCount, setPendingSetCount] = useState(0);
     const [textInput, setTextInput] = useState(counterData?.display_text ?? "");
     const [showTextConfirm, setShowTextConfirm] = useState(false);
     const [pendingText, setPendingText] = useState("");
-    const [queuedDelta, setQueuedDelta] = useState(0);
-    const [serverCount, setServerCount] = useState(counterData?.count ?? 0);
+    const [pendingDelta, setPendingDelta] = useState(0);
+    const [inFlightDelta, setInFlightDelta] = useState(0);
     const prevFetcherState = useRef(fetcherCount.state);
-    const queuedDeltaRef = useRef(queuedDelta);
-    const isCountingRef = useRef(false);
+    const pendingDeltaRef = useRef(pendingDelta);
+    const inFlightDeltaRef = useRef(inFlightDelta);
 
     const isCounting = fetcherCount.state !== "idle";
+    const displayCount = Math.max(committedCount + pendingDelta, 0);
 
     useEffect(() => {
-        queuedDeltaRef.current = queuedDelta;
-    }, [queuedDelta]);
+        pendingDeltaRef.current = pendingDelta;
+    }, [pendingDelta]);
 
     useEffect(() => {
-        isCountingRef.current = isCounting;
-    }, [isCounting]);
+        inFlightDeltaRef.current = inFlightDelta;
+    }, [inFlightDelta]);
 
     // loaderの再バリデーションで最新値に同期（カウント変化時のみ）
     useEffect(() => {
         const latest = counterData?.count ?? 0;
-        setServerCount(latest);
-        if (!isCountingRef.current && queuedDeltaRef.current === 0) {
-            setRealtimeCount(latest);
-            setCountInput(latest);
-        }
+        setCommittedCount(latest);
     }, [counterData?.count]);
+
+    useEffect(() => {
+        setCountInput(displayCount);
+    }, [displayCount]);
 
     useEffect(() => {
         setTextInput(counterData?.display_text ?? "");
     }, [counterData?.display_text]);
 
-    // 送信中に連打された分は delta としてキューし、fetcher が idle に戻るたびに1件ずつ送る。
+    const submitDelta = (delta: number) => {
+        if (!counterData?.id || delta === 0) return;
+        setInFlightDelta(delta);
+        fetcherCount.submit(
+            { counterDataId: counterData.id, intent: "delta", delta: String(delta) },
+            { method: "post" }
+        );
+    };
+
+    // 送信完了時に inFlight を確定値へ反映し、未送信差分があれば続けてまとめ送信する。
     useEffect(() => {
         const becameIdle = prevFetcherState.current !== "idle" && fetcherCount.state === "idle";
         prevFetcherState.current = fetcherCount.state;
 
-        if (!becameIdle || queuedDelta === 0 || !counterData?.id) {
+        if (!becameIdle) {
             return;
         }
 
-        const nextIntent = queuedDelta > 0 ? "increment" : "decrement";
-        setQueuedDelta((prev) => prev + (nextIntent === "increment" ? -1 : 1));
-        fetcherCount.submit(
-            { counterDataId: counterData.id, intent: nextIntent },
-            { method: "post" }
-        );
-    }, [fetcherCount, fetcherCount.state, queuedDelta, counterData?.id]);
+        const sentDelta = inFlightDeltaRef.current;
+        const hasCount =
+            fetcherCount.data &&
+            typeof fetcherCount.data === "object" &&
+            "count" in fetcherCount.data &&
+            typeof (fetcherCount.data as { count: unknown }).count === "number";
 
-    // 送信キューが空になったタイミングで、最終確定値に揃える。
-    useEffect(() => {
-        if (!isCounting && queuedDelta === 0) {
-            setRealtimeCount(serverCount);
-            setCountInput(serverCount);
+        if (sentDelta !== 0) {
+            if (hasCount) {
+                setCommittedCount((fetcherCount.data as { count: number }).count);
+            }
+            setPendingDelta((prev) => prev - sentDelta);
+            setInFlightDelta(0);
+            inFlightDeltaRef.current = 0;
         }
-    }, [isCounting, queuedDelta, serverCount]);
+
+        const remaining = pendingDeltaRef.current - sentDelta;
+        if (remaining !== 0 && counterData?.id) {
+            submitDelta(remaining);
+        }
+    }, [fetcherCount.state, fetcherCount.data, counterData?.id]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
@@ -100,11 +116,7 @@ export default function Counter() {
                 },
                 (payload) => {
                     const updated = payload.new as { count: number };
-                    setServerCount(updated.count);
-                    if (!isCountingRef.current && queuedDeltaRef.current === 0) {
-                        setRealtimeCount(updated.count);
-                        setCountInput(updated.count);
-                    }
+                    setCommittedCount(updated.count);
                 }
             )
             .subscribe();
@@ -147,28 +159,21 @@ export default function Counter() {
     const optimisticMode = fetcherMode.formData?.get("displayMode") as string | null;
     const currentDisplayMode = optimisticMode ?? counterData?.display_mode ?? "count";
 
-    const applyOptimisticDelta = (delta: number) => {
-        setRealtimeCount((prev) => Math.max(prev + delta, 0));
-        setCountInput((prev) => Math.max(prev + delta, 0));
-    };
-
     const handleCountClick = (intent: "increment" | "decrement") => {
         if (!counterData?.id) return;
 
         const delta = intent === "increment" ? 1 : -1;
-        if (delta < 0 && realtimeCount <= 0) return;
+        if (delta < 0 && displayCount <= 0) return;
 
-        applyOptimisticDelta(delta);
+        const nextPending = Math.max(pendingDeltaRef.current + delta, -committedCount);
+        pendingDeltaRef.current = nextPending;
+        setPendingDelta(nextPending);
 
-        if (isCounting) {
-            setQueuedDelta((prev) => prev + delta);
+        if (isCounting || inFlightDeltaRef.current !== 0) {
             return;
         }
 
-        fetcherCount.submit(
-            { counterDataId: counterData.id, intent },
-            { method: "post" }
-        );
+        submitDelta(nextPending);
     };
 
     return (
@@ -219,7 +224,7 @@ export default function Counter() {
                         className="font-bold text-gray-900 leading-none select-none"
                         style={{ fontSize: "clamp(5rem, 25vw, 14rem)" }}
                     >
-                        {realtimeCount}
+                        {displayCount}
                     </p>
 
                     {/* ＋ / − ボタン */}

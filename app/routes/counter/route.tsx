@@ -19,6 +19,7 @@ export function shouldRevalidate({
 
     const intent = String(formData?.get("intent") ?? "");
     const skipIntents = new Set([
+        "delta",
         "increment",
         "decrement",
         "set",
@@ -122,6 +123,31 @@ export async function action({ request }: ActionFunctionArgs) {
     const formData = await request.formData();
     const intent = String(formData.get("intent"));
     const counterDataId = String(formData.get("counterDataId"));
+
+    // カウント差分をまとめて適用（連打時のリクエスト数削減用）
+    if (intent === "delta") {
+        const delta = Number(formData.get("delta"));
+        if (!Number.isInteger(delta) || delta === 0) {
+            return json(
+                { error: "無効な差分値です（0以外の整数）" },
+                { status: 400, headers: responseHeaders }
+            );
+        }
+        const { data, error } = await supabase.rpc("apply_counter_delta", {
+            target_id: counterDataId,
+            target_delta: delta,
+        });
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        if (data === null) {
+            return json(
+                { error: "カウンターの更新に失敗しました（権限がないか、IDが不正です）" },
+                { status: 403, headers: responseHeaders }
+            );
+        }
+        return json({ count: data }, { headers: responseHeaders });
+    }
 
     // カウントを 1 増加（アトミックな SQL 式を使用し、RLS 失敗を検知）
     if (intent === "increment") {
