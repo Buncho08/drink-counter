@@ -60,10 +60,7 @@ export default function Counter() {
                     setCountInput(updated.count);
                 }
             )
-            .subscribe((status, err) => {
-                console.log("[Realtime Counter] status:", status);
-                if (err) console.error("[Realtime Counter] error:", err);
-            });
+            .subscribe();
 
         return () => {
             cancelled = true;

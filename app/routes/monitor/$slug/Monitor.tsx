@@ -1,7 +1,7 @@
 import { useLoaderData, Link } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase.client";
-import type { loader } from "./route";
+import type { loader } from "~/routes/monitor.$slug";
 
 const DISPLAY_IMAGES: Record<string, string> = {
     image1: "/drink.png",
@@ -63,10 +63,7 @@ export default function Monitor() {
                     setDisplayText(updated.display_text ?? "");
                 }
             )
-            .subscribe((status, err) => {
-                console.log("[Realtime Monitor] status:", status);
-                if (err) console.error("[Realtime Monitor] error:", err);
-            });
+            .subscribe();
 
         return () => {
             cancelled = true;

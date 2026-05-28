@@ -71,27 +71,33 @@ ALTER TABLE public.event_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.counter_history ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for profiles
+DROP POLICY IF EXISTS "Users can view all profiles" ON public.profiles;
 CREATE POLICY "Users can view all profiles"
   ON public.profiles FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile"
   ON public.profiles FOR UPDATE
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
 CREATE POLICY "Users can insert their own profile"
   ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
 
 -- RLS Policies for events (誰でも閲覧可能、owner/editorのみ編集可能)
+DROP POLICY IF EXISTS "Anyone can view events" ON public.events;
 CREATE POLICY "Anyone can view events"
   ON public.events FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can create events" ON public.events;
 CREATE POLICY "Authenticated users can create events"
   ON public.events FOR INSERT
   WITH CHECK (auth.uid() IS NOT NULL AND auth.uid() = owner_id);
 
+DROP POLICY IF EXISTS "Event owners and editors can update events" ON public.events;
 CREATE POLICY "Event owners and editors can update events"
   ON public.events FOR UPDATE
   USING (
@@ -103,6 +109,7 @@ CREATE POLICY "Event owners and editors can update events"
     )
   );
 
+DROP POLICY IF EXISTS "Event owners can delete events" ON public.events;
 CREATE POLICY "Event owners can delete events"
   ON public.events FOR DELETE
   USING (
@@ -115,10 +122,12 @@ CREATE POLICY "Event owners can delete events"
   );
 
 -- RLS Policies for counter_data (誰でも閲覧可能、owner/editorのみ編集可能)
+DROP POLICY IF EXISTS "Anyone can view counter data" ON public.counter_data;
 CREATE POLICY "Anyone can view counter data"
   ON public.counter_data FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Event owners and editors can update counter data" ON public.counter_data;
 CREATE POLICY "Event owners and editors can update counter data"
   ON public.counter_data FOR UPDATE
   USING (
@@ -130,6 +139,7 @@ CREATE POLICY "Event owners and editors can update counter data"
     )
   );
 
+DROP POLICY IF EXISTS "Authenticated users can create counter data" ON public.counter_data;
 CREATE POLICY "Authenticated users can create counter data"
   ON public.counter_data FOR INSERT
   WITH CHECK (
@@ -142,6 +152,7 @@ CREATE POLICY "Authenticated users can create counter data"
   );
 
 -- RLS Policies for event_permissions (ownerのみ管理可能)
+DROP POLICY IF EXISTS "Users can view permissions for their events" ON public.event_permissions;
 CREATE POLICY "Users can view permissions for their events"
   ON public.event_permissions FOR SELECT
   USING (
@@ -154,6 +165,7 @@ CREATE POLICY "Users can view permissions for their events"
     )
   );
 
+DROP POLICY IF EXISTS "Event owners can manage permissions" ON public.event_permissions;
 CREATE POLICY "Event owners can manage permissions"
   ON public.event_permissions FOR ALL
   USING (
@@ -166,10 +178,12 @@ CREATE POLICY "Event owners can manage permissions"
   );
 
 -- RLS Policies for counter_history (誰でも閲覧可能)
+DROP POLICY IF EXISTS "Anyone can view counter history" ON public.counter_history;
 CREATE POLICY "Anyone can view counter history"
   ON public.counter_history FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "System can insert counter history" ON public.counter_history;
 CREATE POLICY "System can insert counter history"
   ON public.counter_history FOR INSERT
   WITH CHECK (true);

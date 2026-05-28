@@ -34,7 +34,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const ownedIds = new Set(ownedEvents.map((e) => e.id));
     const editorEvents = (editorPerms ?? [])
         .flatMap((p) =>
-            p.event ? [p.event as { id: string; name: string; slug: string; start_date: string; end_date: string }] : []
+            p.event
+                ? [
+                    p.event as unknown as {
+                        id: string;
+                        name: string;
+                        slug: string;
+                        start_date: string;
+                        end_date: string;
+                    },
+                ]
+                : []
         )
         .filter((e) => !ownedIds.has(e.id))
         .map((e) => ({ ...e, role: "editor" as const }));
@@ -164,9 +174,13 @@ export async function action({ request }: ActionFunctionArgs) {
         // dev環境ではgetPublicUrl()がDockerネットワーク内部URL（supabase_kong_...:8000）を返す。
         // ブラウザはViteプロキシ経由でのみStorageにアクセスできるため、
         // オリジン部分をリクエストのオリジン（localhost:5173等）に置き換える。
+        // 本番環境ではSupabase CloudのURLをそのまま使用する。
         const storagePath = new URL(publicUrl).pathname;
         const requestOrigin = new URL(request.url).origin;
-        const browserUrl = requestOrigin + storagePath;
+        const browserUrl =
+            process.env.NODE_ENV === "development"
+                ? requestOrigin + storagePath
+                : publicUrl;
 
         const { error } = await supabase
             .from("counter_data")

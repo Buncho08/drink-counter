@@ -1,5 +1,11 @@
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["app/**/__tests__/**", "sample/**", "**/*:Zone.Identifier"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["@vercel/remix", "node", "vite/client"],
