@@ -49,8 +49,24 @@ describe("Auth", () => {
     });
 
     it("actionData にエラーがあるときエラーメッセージを表示する", () => {
-        vi.mocked(useActionData).mockReturnValue({ error: "メールまたはパスワードが間違っています" });
+        vi.mocked(useActionData).mockReturnValue({
+            intent: "login",
+            error: "メールまたはパスワードが間違っています",
+        });
         render(<Auth />);
         expect(screen.getByText("メールまたはパスワードが間違っています")).toBeInTheDocument();
+    });
+
+    it("新規登録成功時に確認メール送信メッセージを表示する", async () => {
+        const user = userEvent.setup();
+        vi.mocked(useActionData).mockReturnValue({
+            intent: "signup",
+            success: "確認メールを送信しました。メール内のリンクを開いて登録を完了してください。",
+        });
+        render(<Auth />);
+        await user.click(screen.getByRole("button", { name: "新規登録" }));
+        expect(
+            screen.getByText("確認メールを送信しました。メール内のリンクを開いて登録を完了してください。")
+        ).toBeInTheDocument();
     });
 });

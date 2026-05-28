@@ -28,7 +28,16 @@ export async function action({ request }: ActionFunctionArgs) {
     if (intent === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+            return json(
+                {
+                    intent,
+                    error:
+                        error.message === "Invalid login credentials"
+                            ? "メールアドレスまたはパスワードが正しくありません。"
+                            : `ログインに失敗しました: ${error.message}`,
+                },
+                { status: 400, headers: responseHeaders }
+            );
         }
         return redirect("/counter", { headers: responseHeaders });
     }
@@ -47,9 +56,22 @@ export async function action({ request }: ActionFunctionArgs) {
             },
         });
         if (error) {
-            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+            const message = error.message.toLowerCase().includes("email rate limit exceeded")
+                ? "確認メールの送信回数が上限に達しました。少し時間をおいて再度お試しください。"
+                : `新規登録に失敗しました: ${error.message}`;
+            return json(
+                { intent, error: message },
+                { status: 400, headers: responseHeaders }
+            );
         }
-        return redirect("/counter", { headers: responseHeaders });
+        return json(
+            {
+                intent,
+                success:
+                    "確認メールを送信しました。メール内のリンクを開いて登録を完了してください。",
+            },
+            { headers: responseHeaders }
+        );
     }
 
     if (intent === "logout") {

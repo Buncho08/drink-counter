@@ -5,6 +5,10 @@ import type { action } from "./route";
 export default function Auth() {
     const actionData = useActionData<typeof action>();
     const [mode, setMode] = useState<"login" | "signup">("login");
+    const actionIntent = actionData && "intent" in actionData ? actionData.intent : undefined;
+    const actionError = actionData && "error" in actionData ? actionData.error : undefined;
+    const actionSuccess = actionData && "success" in actionData ? actionData.success : undefined;
+    const shouldShowMessage = !actionIntent || actionIntent === mode;
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -40,7 +44,7 @@ export default function Auth() {
                         <input type="hidden" name="intent" value="login" />
                         <Field label="メールアドレス" name="email" type="email" />
                         <Field label="パスワード" name="password" type="password" />
-                        {actionData?.error && <ErrorMessage message={actionData.error} />}
+                        {shouldShowMessage && actionError && <ErrorMessage message={actionError} />}
                         <SubmitButton>ログイン</SubmitButton>
                     </Form>
                 )}
@@ -52,7 +56,8 @@ export default function Auth() {
                         <Field label="パスワード" name="password" type="password" />
                         <Field label="ユーザー名" name="username" type="text" />
                         <Field label="フルネーム" name="fullName" type="text" />
-                        {actionData?.error && <ErrorMessage message={actionData.error} />}
+                        {shouldShowMessage && actionSuccess && <SuccessMessage message={actionSuccess} />}
+                        {shouldShowMessage && actionError && <ErrorMessage message={actionError} />}
                         <SubmitButton>登録</SubmitButton>
                     </Form>
                 )}
@@ -89,6 +94,14 @@ function SubmitButton({ children }: { children: React.ReactNode }) {
 function ErrorMessage({ message }: { message: string }) {
     return (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {message}
+        </p>
+    );
+}
+
+function SuccessMessage({ message }: { message: string }) {
+    return (
+        <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
             {message}
         </p>
     );
