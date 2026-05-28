@@ -2,12 +2,11 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/noto-sans";
-@import url('https://fonts.googleapis.com/css2?family=Kaisei+Opti&display=swap');
 
 @custom-variant dark (&:is(.dark *));
 
 .kaisei-opti-regular {
-  font-family: "Kaisei Opti", serif;
+  font-family: "Kaisei Opti";
   font-weight: 400;
   font-style: normal;
 }
