@@ -1,5 +1,5 @@
 import { Form, useLoaderData, useFetcher, Link } from "@remix-run/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase.client";
 import type { loader } from "./route";
 
@@ -18,6 +18,8 @@ export default function Counter() {
     const [textInput, setTextInput] = useState(counterData?.display_text ?? "");
     const [showTextConfirm, setShowTextConfirm] = useState(false);
     const [pendingText, setPendingText] = useState("");
+    const [queuedDelta, setQueuedDelta] = useState(0);
+    const prevFetcherState = useRef(fetcherCount.state);
 
     // loaderの再バリデーションで最新値に同期（カウント変化時のみ）
     useEffect(() => {
@@ -28,6 +30,23 @@ export default function Counter() {
     useEffect(() => {
         setTextInput(counterData?.display_text ?? "");
     }, [counterData?.display_text]);
+
+    // 送信中に連打された分は delta としてキューし、fetcher が idle に戻るたびに1件ずつ送る。
+    useEffect(() => {
+        const becameIdle = prevFetcherState.current !== "idle" && fetcherCount.state === "idle";
+        prevFetcherState.current = fetcherCount.state;
+
+        if (!becameIdle || queuedDelta === 0 || !counterData?.id) {
+            return;
+        }
+
+        const nextIntent = queuedDelta > 0 ? "increment" : "decrement";
+        setQueuedDelta((prev) => prev + (nextIntent === "increment" ? -1 : 1));
+        fetcherCount.submit(
+            { counterDataId: counterData.id, intent: nextIntent },
+            { method: "post" }
+        );
+    }, [fetcherCount, fetcherCount.state, queuedDelta, counterData?.id]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
@@ -86,8 +105,10 @@ export default function Counter() {
         );
     }
 
-    const isDecrementing = fetcherCount.state !== "idle" && fetcherCount.formData?.get("intent") === "decrement";
-    const isIncrementing = fetcherCount.state !== "idle" && fetcherCount.formData?.get("intent") === "increment";
+    const isCounting = fetcherCount.state !== "idle";
+    const countError = fetcherCount.state === "idle"
+        ? (fetcherCount.data as { error?: string } | undefined)?.error
+        : undefined;
     const isUploadingBg = fetcherBg.state !== "idle";
     const bgUploadError = fetcherBg.state === "idle" && (fetcherBg.data as { error?: string } | undefined)?.error;
 
@@ -101,6 +122,30 @@ export default function Counter() {
     // optimistic update: fetcherModeで送信中の値があればそちらを優先
     const optimisticMode = fetcherMode.formData?.get("displayMode") as string | null;
     const currentDisplayMode = optimisticMode ?? counterData?.display_mode ?? "count";
+
+    const applyOptimisticDelta = (delta: number) => {
+        setRealtimeCount((prev) => Math.max(prev + delta, 0));
+        setCountInput((prev) => Math.max(prev + delta, 0));
+    };
+
+    const handleCountClick = (intent: "increment" | "decrement") => {
+        if (!counterData?.id) return;
+
+        const delta = intent === "increment" ? 1 : -1;
+        if (delta < 0 && realtimeCount <= 0) return;
+
+        applyOptimisticDelta(delta);
+
+        if (isCounting) {
+            setQueuedDelta((prev) => prev + delta);
+            return;
+        }
+
+        fetcherCount.submit(
+            { counterDataId: counterData.id, intent },
+            { method: "post" }
+        );
+    };
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -155,30 +200,29 @@ export default function Counter() {
 
                     {/* ＋ / − ボタン */}
                     <div className="flex items-center gap-8">
-                        <fetcherCount.Form method="post">
-                            <input type="hidden" name="counterDataId" value={counterData.id} />
-                            <input type="hidden" name="intent" value="decrement" />
-                            <button
-                                type="submit"
-                                disabled={isDecrementing}
-                                className="w-20 h-20 rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 disabled:opacity-50 text-4xl font-light text-gray-700 transition-all flex items-center justify-center"
-                            >
-                                −
-                            </button>
-                        </fetcherCount.Form>
+                        <button
+                            type="button"
+                            onClick={() => handleCountClick("decrement")}
+                            className="w-20 h-20 rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 text-4xl font-light text-gray-700 transition-all flex items-center justify-center"
+                        >
+                            −
+                        </button>
 
-                        <fetcherCount.Form method="post">
-                            <input type="hidden" name="counterDataId" value={counterData.id} />
-                            <input type="hidden" name="intent" value="increment" />
-                            <button
-                                type="submit"
-                                disabled={isIncrementing}
-                                className="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 text-4xl font-light text-white transition-all shadow-lg shadow-blue-200 flex items-center justify-center"
-                            >
-                                ＋
-                            </button>
-                        </fetcherCount.Form>
+                        <button
+                            type="button"
+                            onClick={() => handleCountClick("increment")}
+                            className="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-4xl font-light text-white transition-all shadow-lg shadow-blue-200 flex items-center justify-center"
+                        >
+                            ＋
+                        </button>
                     </div>
+
+                    {(isCounting || queuedDelta !== 0) && (
+                        <p className="text-xs text-gray-400">同期中...{queuedDelta !== 0 ? `（待ち ${Math.abs(queuedDelta)}）` : ""}</p>
+                    )}
+                    {countError && (
+                        <p className="text-xs text-red-500 text-center">{countError}</p>
+                    )}
 
                     {/* 数値直接入力 */}
                     <div className="flex items-center gap-2">

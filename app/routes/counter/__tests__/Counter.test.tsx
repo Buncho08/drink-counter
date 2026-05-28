@@ -127,7 +127,7 @@ describe("Counter", () => {
         expect(screen.getByText(/カウンターデータが見つかりません/)).toBeInTheDocument();
     });
 
-    it("＋ボタンのフォームに intent=increment と counterDataId が含まれる", () => {
+    it("＋ボタンが表示される", () => {
         vi.mocked(useLoaderData).mockReturnValue({
             events: [baseEvent],
             selectedEvent: baseEvent,
@@ -135,18 +135,10 @@ describe("Counter", () => {
             user: { id: "user-1", email: "test@example.com" },
         });
         render(<Counter />);
-
-        const incrementButton = screen.getByRole("button", { name: "＋" });
-        const form = incrementButton.closest("form")!;
-
-        const intentInput = form.querySelector<HTMLInputElement>("input[name='intent']");
-        const counterDataIdInput = form.querySelector<HTMLInputElement>("input[name='counterDataId']");
-
-        expect(intentInput?.value).toBe("increment");
-        expect(counterDataIdInput?.value).toBe("counter-1");
+        expect(screen.getByRole("button", { name: "＋" })).toBeInTheDocument();
     });
 
-    it("−ボタンのフォームに intent=decrement と counterDataId が含まれる", () => {
+    it("−ボタンが表示される", () => {
         vi.mocked(useLoaderData).mockReturnValue({
             events: [baseEvent],
             selectedEvent: baseEvent,
@@ -154,18 +146,10 @@ describe("Counter", () => {
             user: { id: "user-1", email: "test@example.com" },
         });
         render(<Counter />);
-
-        const decrementButton = screen.getByRole("button", { name: "−" });
-        const form = decrementButton.closest("form")!;
-
-        const intentInput = form.querySelector<HTMLInputElement>("input[name='intent']");
-        const counterDataIdInput = form.querySelector<HTMLInputElement>("input[name='counterDataId']");
-
-        expect(intentInput?.value).toBe("decrement");
-        expect(counterDataIdInput?.value).toBe("counter-1");
+        expect(screen.getByRole("button", { name: "−" })).toBeInTheDocument();
     });
 
-    it("インクリメント送信中は＋ボタンが disabled になる", () => {
+    it("インクリメント送信中でも＋ボタンは押下可能のまま", () => {
         vi.mocked(useLoaderData).mockReturnValue({
             events: [baseEvent],
             selectedEvent: baseEvent,
@@ -185,11 +169,11 @@ describe("Counter", () => {
         );
 
         render(<Counter />);
-        expect(screen.getByRole("button", { name: "＋" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "＋" })).not.toBeDisabled();
         expect(screen.getByRole("button", { name: "−" })).not.toBeDisabled();
     });
 
-    it("デクリメント送信中は−ボタンが disabled になる", () => {
+    it("デクリメント送信中でも−ボタンは押下可能のまま", () => {
         vi.mocked(useLoaderData).mockReturnValue({
             events: [baseEvent],
             selectedEvent: baseEvent,
@@ -209,7 +193,7 @@ describe("Counter", () => {
         );
 
         render(<Counter />);
-        expect(screen.getByRole("button", { name: "−" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "−" })).not.toBeDisabled();
         expect(screen.getByRole("button", { name: "＋" })).not.toBeDisabled();
     });
 });
