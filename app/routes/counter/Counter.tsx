@@ -11,6 +11,8 @@ export default function Counter() {
     const fetcherText = useFetcher();
     const fetcherTextSize = useFetcher();
     const fetcherTextColor = useFetcher();
+    const fetcherTextStroke = useFetcher();
+    const fetcherTextStrokeColor = useFetcher();
 
     const [displayCount, setDisplayCount] = useState(counterData?.count ?? 0);
     const [countInput, setCountInput] = useState(counterData?.count ?? 0);
@@ -21,6 +23,8 @@ export default function Counter() {
     const [pendingText, setPendingText] = useState("");
     const [textSizeInput, setTextSizeInput] = useState(counterData?.display_text_size ?? 120);
     const [textColorInput, setTextColorInput] = useState(counterData?.display_text_color ?? "#EAB308");
+    const [textStrokeEnabled, setTextStrokeEnabled] = useState(counterData?.display_text_stroke_enabled ?? true);
+    const [textStrokeColorInput, setTextStrokeColorInput] = useState(counterData?.display_text_stroke_color ?? "#000000");
 
     // 未完了操作数: Realtime/loader更新をブロックするために使用
     const pendingOpsRef = useRef(0);
@@ -54,6 +58,14 @@ export default function Counter() {
     useEffect(() => {
         setTextColorInput(counterData?.display_text_color ?? "#EAB308");
     }, [counterData?.display_text_color]);
+
+    useEffect(() => {
+        setTextStrokeEnabled(counterData?.display_text_stroke_enabled ?? true);
+    }, [counterData?.display_text_stroke_enabled]);
+
+    useEffect(() => {
+        setTextStrokeColorInput(counterData?.display_text_stroke_color ?? "#000000");
+    }, [counterData?.display_text_stroke_color]);
 
     // Realtimeサブスクリプション（counterData.idが変わった時だけ再作成）
     useEffect(() => {
@@ -358,6 +370,49 @@ export default function Counter() {
                                 />
                                 <span className="text-xs text-gray-400">{textColorInput}</span>
                             </fetcherTextColor.Form>
+                            {/* 文字フチ */}
+                            <fetcherTextStroke.Form method="post" className="flex items-center gap-2">
+                                <input type="hidden" name="counterDataId" value={counterData.id} />
+                                <input type="hidden" name="intent" value="setDisplayTextStrokeEnabled" />
+                                <span className="text-xs text-gray-500 w-10 shrink-0">フチ</span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={textStrokeEnabled}
+                                    onClick={() => {
+                                        const next = !textStrokeEnabled;
+                                        setTextStrokeEnabled(next);
+                                        fetcherTextStroke.submit(
+                                            { counterDataId: counterData.id, intent: "setDisplayTextStrokeEnabled", displayTextStrokeEnabled: String(next) },
+                                            { method: "post" }
+                                        );
+                                    }}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${textStrokeEnabled ? "bg-blue-600" : "bg-gray-300"
+                                        }`}
+                                >
+                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${textStrokeEnabled ? "translate-x-4" : "translate-x-1"
+                                        }`} />
+                                </button>
+                            </fetcherTextStroke.Form>
+                            {/* フチ色（有効時のみ表示） */}
+                            {textStrokeEnabled && (
+                                <fetcherTextStrokeColor.Form method="post" className="flex items-center gap-2">
+                                    <input type="hidden" name="counterDataId" value={counterData.id} />
+                                    <input type="hidden" name="intent" value="setDisplayTextStrokeColor" />
+                                    <span className="text-xs text-gray-500 w-10 shrink-0">フチ色</span>
+                                    <input
+                                        type="color"
+                                        name="displayTextStrokeColor"
+                                        value={textStrokeColorInput}
+                                        onChange={(e) => {
+                                            setTextStrokeColorInput(e.target.value);
+                                            fetcherTextStrokeColor.submit(e.currentTarget.form!);
+                                        }}
+                                        className="w-9 h-9 rounded cursor-pointer border border-gray-300 bg-white p-0.5"
+                                    />
+                                    <span className="text-xs text-gray-400">{textStrokeColorInput}</span>
+                                </fetcherTextStrokeColor.Form>
+                            )}
                         </div>
                     )}
                 </main>

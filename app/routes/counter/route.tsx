@@ -100,12 +100,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         display_text: string;
         display_text_size: number;
         display_text_color: string;
+        display_text_stroke_enabled: boolean;
+        display_text_stroke_color: string;
     } | null = null;
 
     if (selectedEvent) {
         const { data } = await supabase
             .from("counter_data")
-            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color")
+            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color, display_text_stroke_enabled, display_text_stroke_color")
             .eq("event_id", selectedEvent.id)
             .single();
         counterData = data;
@@ -312,6 +314,35 @@ export async function action({ request }: ActionFunctionArgs) {
             return json({ error: error.message }, { status: 400, headers: responseHeaders });
         }
         return json({ displayTextColor: color }, { headers: responseHeaders });
+    }
+
+    // テキストのフチ表示ON/OFFを更新
+    if (intent === "setDisplayTextStrokeEnabled") {
+        const enabled = formData.get("displayTextStrokeEnabled") === "true";
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_stroke_enabled: enabled })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextStrokeEnabled: enabled }, { headers: responseHeaders });
+    }
+
+    // テキストのフチ色を更新
+    if (intent === "setDisplayTextStrokeColor") {
+        const color = String(formData.get("displayTextStrokeColor"));
+        if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+            return json({ error: "無効なカラーコードです" }, { status: 400, headers: responseHeaders });
+        }
+        const { error } = await supabase
+            .from("counter_data")
+            .update({ display_text_stroke_color: color })
+            .eq("id", counterDataId);
+        if (error) {
+            return json({ error: error.message }, { status: 400, headers: responseHeaders });
+        }
+        return json({ displayTextStrokeColor: color }, { headers: responseHeaders });
     }
 
     return json(

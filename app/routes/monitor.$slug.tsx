@@ -23,12 +23,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         display_text: string;
         display_text_size: number;
         display_text_color: string;
+        display_text_stroke_enabled: boolean;
+        display_text_stroke_color: string;
     } | null = null;
 
     if (event) {
         const { data } = await supabase
             .from("counter_data")
-            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color")
+            .select("id, count, background_image_url, display_mode, display_text, display_text_size, display_text_color, display_text_stroke_enabled, display_text_stroke_color")
             .eq("event_id", event.id)
             .single();
         counterData = data;
