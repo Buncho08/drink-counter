@@ -236,10 +236,12 @@ export async function action({ request }: ActionFunctionArgs) {
         // 本番環境ではSupabase CloudのURLをそのまま使用する。
         const storagePath = new URL(publicUrl).pathname;
         const requestOrigin = new URL(request.url).origin;
-        const browserUrl =
+        const baseUrl =
             process.env.NODE_ENV === "development"
                 ? requestOrigin + storagePath
                 : publicUrl;
+        // キャッシュバスト用タイムスタンプを付与（同ファイル名の再アップロードでも確実に反映させるため）
+        const browserUrl = `${baseUrl}?v=${Date.now()}`;
 
         const { error } = await supabase
             .from("counter_data")
