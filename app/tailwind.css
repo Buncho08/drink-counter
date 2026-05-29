@@ -5,9 +5,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "GN-Koharuiro-Sunray";
+  src: url("/fonts/GN-Koharu-iro_Sunray/GN-Koharuiro_Sunray.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 .kaisei-opti-regular {
-  font-family: "Kaisei Opti";
-  font-weight: 400;
+  font-family: "GN-Koharuiro-Sunray", sans-serif;
+  font-weight: normal;
   font-style: normal;
 }
 
